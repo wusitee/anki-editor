@@ -1099,13 +1099,32 @@ processed with `org-attach-expand-links' called as a hook before the exporter
 sees the buffer content. It is made work on an org-mode buffer, not on a string,
 hence the need to shadow the `org-attach-dir' function."
   (let* ((attach-dir (org-attach-dir))
+         (entry-id (org-entry-get nil "ID"))
          (expand-links (lambda (str)
+                         ;; First, manually expand attachment: links to file: links
+                         ;; Use org-element for robust link parsing
+                         (with-temp-buffer
+                           (org-mode)
+                           (insert str)
+                           (goto-char (point-min))
+                           (while (re-search-forward "\\[\\[attachment:[^]]+\\]\\]" nil t)
+                             (let* ((beg (match-beginning 0))
+                                    (end (match-end 0))
+                                    (link-text (buffer-substring (+ beg 13) (- end 2)))
+                                    (replacement (format "[[file:%s/%s]]" attach-dir link-text)))
+                               (delete-region beg end)
+                               (goto-char beg)
+                               (insert replacement)))
+                           (setq str (buffer-string)))
                          (cl-letf (((symbol-function 'org-attach-dir)
                                     (lambda () attach-dir)))
                            ;; Reusing single tmp buffer for all fields
                            (erase-buffer)
                            (insert str)
                            (goto-char (point-min))
+                           ;; Set up entry context with ID property
+                           (when entry-id
+                             (org-entry-put nil "ID" entry-id))
                            (org-attach-expand-links nil)
                            (buffer-string)))))
     (if (not attach-dir)
